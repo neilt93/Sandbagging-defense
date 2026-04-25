@@ -78,14 +78,47 @@ Decision gate:
 
 ---
 
-## Phase 2 — Behavioral pilot (TBD)
+## Phase 2 — Behavioral pilot harness (2026-04-25)
 
-Required numbers:
+**Decision gate: PIPELINE READY** (no model run yet — see below).
+
+Implemented:
+- `elicitation/backends.py` — three backends behind a common `Backend`
+  protocol with `score_pair(prompt, A_token, B_token) -> PairScore`:
+    - `MockBackend` — synthetic LZ-tracking scorer for unit tests
+    - `HFBackend`   — transformers, lazy-loaded for CPU/GPU
+    - `VLLMBackend` — production path with logprobs
+- `elicitation/harness.py` — pairwise iteration (6 unordered pairs ×
+  2 positional orders = 12 calls per quadruplet per reframing),
+  position balancing, parquet output at
+  `results/pilot/{model}/{reframing}.parquet`.
+- `analysis/pilot.py` — `attach_lz_gap`, `preference_accuracy`,
+  `lz_rank_correlation`, `cross_reframing_agreement`, `scaling_table`.
+
+End-to-end pipeline verified with the mock backend (13 tests):
+- 12 ordered rows per quadruplet collapse to 6 balanced preferences.
+- Position balancing cancels constant left-side bias.
+- LZ-tracking mock recovers positive Spearman with `lz_gap`.
+- Cross-reframing Spearman = 1.0 (deterministic mock).
+- `scaling_table` joins external model-size labels.
+
+**What's missing**: the actual Qwen2.5 0.5B-32B sweep. This requires
+GPUs and the `[ml]` extras (`uv sync --extra dev --extra ml`) which
+this sandbox does not have. To run the pilot:
+
+```
+make install-ml
+uv run python -m sandbagging_defense.elicitation.harness \
+    --config configs/pilot.yaml --backend-kind vllm
+uv run python -c "from sandbagging_defense.analysis.pilot import *; ..."
+```
+
+Required numbers (TBD on a GPU box):
 - Per-model rank correlation (preference ↔ LZ): r =
 - Cross-reframing Spearman: ρ =
 - Scaling slope (model size ↔ accuracy):
 
-Decision gate (one of):
+Decision gate (one of, when numbers come in):
 - [ ] above chance + scales with size → proceed to Phase 3
 - [ ] above chance, flat in scale → proceed with reduced scope
 - [ ] at chance → try one more reframing round, then quit
