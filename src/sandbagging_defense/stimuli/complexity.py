@@ -65,9 +65,12 @@ def gzip_ratio(seq: np.ndarray, replicate: int = 16) -> float:
 
     Replication amortizes gzip's framing overhead so the ratio reflects the
     intrinsic compressibility of the sequence, not the header constant.
+    Returns 0.0 for an empty input.
     """
     arr = np.asarray(seq, dtype=np.uint8)
     raw = arr.tobytes() * replicate
+    if len(raw) == 0:
+        return 0.0
     return len(gzip.compress(raw, compresslevel=9)) / len(raw)
 
 

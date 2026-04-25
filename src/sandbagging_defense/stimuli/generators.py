@@ -110,6 +110,41 @@ def hierarchical_pcfg(
 
 
 # --------------------------------------------------------------------------- #
+# Family 4b: hierarchical_pcfg_stochastic
+# --------------------------------------------------------------------------- #
+
+
+def hierarchical_pcfg_stochastic(
+    rng: np.random.Generator,
+    length: int,
+    vocab: int,
+    depth: int,
+    branching: int = 4,
+    n_alternatives: int = 3,
+) -> np.ndarray:
+    """Stochastic L-system with K alternative rules per symbol.
+
+    Each symbol s has `n_alternatives` possible expansions of length
+    `branching`. At each expansion call, a rule is sampled uniformly
+    PER OCCURRENCE (not per symbol identity), so the same parent at
+    different positions can produce different children. The resulting
+    sequence has hierarchical structure that bigram-only resampling
+    cannot reproduce — addressing the Phase 1 finding that the
+    deterministic L-system was bigram-decomposable.
+    """
+    rules = rng.integers(0, vocab, size=(vocab, n_alternatives, branching), dtype=np.int64)
+    expansions = branching**depth
+    axiom_len = max(1, (length + expansions - 1) // expansions)
+    seq = rng.integers(0, vocab, size=axiom_len, dtype=np.int64)
+    for _ in range(depth):
+        choices = rng.integers(0, n_alternatives, size=seq.shape[0])
+        seq = rules[seq, choices].reshape(-1)
+    if seq.shape[0] < length:
+        seq = np.tile(seq, (length + seq.shape[0] - 1) // seq.shape[0])
+    return seq[:length]
+
+
+# --------------------------------------------------------------------------- #
 # Family 5: cellular_automaton
 # --------------------------------------------------------------------------- #
 
@@ -150,7 +185,18 @@ def cellular_automaton(
 # --------------------------------------------------------------------------- #
 
 
-def all_specs() -> list[StimulusSpec]:
+def all_specs(include_stochastic_pcfg: bool = False) -> list[StimulusSpec]:
+    """Default spec set used by Phase 1.
+
+    `hierarchical_pcfg_stochastic` is gated off by default. We added it
+    to test whether per-occurrence rule choice would tighten the
+    structured-vs-pastiche LZ gap (the Phase 1 finding), but empirically
+    it makes the gap WIDER: pastiche-of-Markov has a built-in tendency
+    to revisit short loops and ends up with LZ count *below* the source
+    for nearly all our families. The stochastic family remains available
+    as a genuinely-bigram-resistant control under bigram-LIKELIHOOD
+    metrics (not LZ); enable it explicitly when that distinction matters.
+    """
     specs: list[StimulusSpec] = [StimulusSpec("random_iid", {})]
     for k in (1, 2, 3):
         specs.append(StimulusSpec("markov", {"order": k}))
@@ -158,6 +204,9 @@ def all_specs() -> list[StimulusSpec]:
         specs.append(StimulusSpec("periodic", {"period": p}))
     for d in (2, 3, 4):
         specs.append(StimulusSpec("hierarchical_pcfg", {"depth": d}))
+    if include_stochastic_pcfg:
+        for d in (2, 3, 4):
+            specs.append(StimulusSpec("hierarchical_pcfg_stochastic", {"depth": d}))
     for r in (30, 90, 110):
         specs.append(StimulusSpec("cellular_automaton", {"rule": r}))
     return specs
@@ -172,6 +221,8 @@ def realize(spec: StimulusSpec, rng: np.random.Generator, length: int, vocab: in
         return periodic(rng, length, vocab, **spec.params)
     if spec.family == "hierarchical_pcfg":
         return hierarchical_pcfg(rng, length, vocab, **spec.params)
+    if spec.family == "hierarchical_pcfg_stochastic":
+        return hierarchical_pcfg_stochastic(rng, length, vocab, **spec.params)
     if spec.family == "cellular_automaton":
         return cellular_automaton(rng, length, vocab, **spec.params)
     raise ValueError(f"unknown family: {spec.family}")

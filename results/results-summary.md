@@ -267,3 +267,48 @@ Required numbers (TBD on a GPU box):
 ---
 
 ## Phase 6 — Writeup (TBD)
+
+---
+
+## Follow-ups (2026-04-25, after initial Phase 0–5 push)
+
+### Stochastic PCFG investigation
+Added `hierarchical_pcfg_stochastic` (per-occurrence rule choice from K
+alternatives) to test whether bigram-resistant generators would tighten
+the structured-vs-pastiche LZ gap that Phase 1 flagged. Empirical
+finding (40-stim sweep across depth ∈ {2,3,4} and n_alt ∈ {2,5,10}):
+the stochastic family makes the gap WIDER, not tighter. Confirmed by
+sweeping deterministic PCFG, markov{1,2,3}, periodic, and CA — nearly
+every family has pastiche LZ < structured LZ.
+
+The root cause is a property of LZ on Markov samples: a fitted Markov
+chain revisits short loops more aggressively than the structured
+source, producing fewer novel phrases. So pastiche-of-Markov is
+*more* compressible than its source under LZ. The stochastic family is
+gated off by default in `all_specs()` and stays available as an
+explicit-opt-in for activation-probe work where the bigram-resistance
+matters under likelihood (not LZ) metrics.
+
+### Music broadened beyond Bach
+`stimuli/music.py` now scans the whole local music21 corpus by composer.
+Local corpus head-count (xml/krn): bach (largest), beethoven 26,
+mozart 16, schumann 12, haydn 9. Multi-voice extraction
+(`max_voices_per_score=4`) gives ~4x supply per chorale. CLI accepts
+`--composers` and `--voices`. Backwards-compatible
+`iter_bach_chorales()` retained for the original entry point.
+
+### Bug audit
+Two real defects found and fixed:
+- `extract_pitch_classes` raised AttributeError for score-like objects
+  with no `parts` and no `flatten()` method. Now returns None.
+- `gzip_ratio` raised ZeroDivisionError on empty input. Now returns 0.0.
+Both pinned with regression tests.
+
+### `analysis/figures.py` end-to-end
+Implemented `money_plot`, `lz_preference_scatter`, and a
+`synthetic_money_demo` so `make figures` produces a real PDF without
+GPU runs. The CLI auto-falls-back to the synthetic demo when no
+`results/sandbag/` exists, with a stderr warning. Verified 19KB PDF
+output.
+
+**120/120 tests passing across two consecutive runs; lint clean.**

@@ -32,6 +32,7 @@ from sandbagging_defense.stimuli.generators import (
     cellular_automaton,
     generate_corpus,
     hierarchical_pcfg,
+    hierarchical_pcfg_stochastic,
     markov,
     periodic,
     random_iid,
@@ -283,6 +284,38 @@ def test_cellular_automaton_rule_30_high_complexity() -> None:
     assert lz76_phrase_count(seq) > lz76_phrase_count(p)
 
 
+def test_stochastic_pcfg_shape_and_range() -> None:
+    rng = np.random.default_rng(0)
+    seq = hierarchical_pcfg_stochastic(rng, LENGTH, VOCAB, depth=3)
+    assert seq.shape == (LENGTH,)
+    assert int(seq.min()) >= 0
+    assert int(seq.max()) < VOCAB
+
+
+def test_stochastic_pcfg_differs_across_seeds() -> None:
+    rng_a = np.random.default_rng(0)
+    rng_b = np.random.default_rng(1)
+    seq_a = hierarchical_pcfg_stochastic(rng_a, LENGTH, VOCAB, depth=3)
+    seq_b = hierarchical_pcfg_stochastic(rng_b, LENGTH, VOCAB, depth=3)
+    assert not np.array_equal(seq_a, seq_b)
+
+
+def test_all_specs_excludes_stochastic_pcfg_by_default() -> None:
+    families = {s.family for s in all_specs()}
+    assert "hierarchical_pcfg_stochastic" not in families
+    families_with = {s.family for s in all_specs(include_stochastic_pcfg=True)}
+    assert "hierarchical_pcfg_stochastic" in families_with
+
+
+def test_realize_dispatches_to_stochastic_pcfg() -> None:
+    from sandbagging_defense.stimuli.generators import StimulusSpec
+
+    rng = np.random.default_rng(0)
+    spec = StimulusSpec("hierarchical_pcfg_stochastic", {"depth": 2})
+    seq = realize(spec, rng, LENGTH, VOCAB)
+    assert seq.shape == (LENGTH,)
+
+
 def test_compute_all_metrics_keys() -> None:
     rng = np.random.default_rng(0)
     seq = hierarchical_pcfg(rng, LENGTH, VOCAB, depth=3)
@@ -330,3 +363,8 @@ def test_bigram_surprisal_constant_low() -> None:
     s = bigram_surprisal(seq, VOCAB)
     # Constant sequence under empirical bigram is highly predictable.
     assert s < 0.5
+
+
+def test_gzip_ratio_handles_empty_input() -> None:
+    """Regression: gzip_ratio used to raise ZeroDivisionError on empty input."""
+    assert gzip_ratio(np.array([], dtype=np.uint8)) == 0.0
