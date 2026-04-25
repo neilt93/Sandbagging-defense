@@ -1,0 +1,47 @@
+# Results & artifacts (keep .gitkeep + results-summary.md only)
+results/*
+!results/.gitkeep
+!results/results-summary.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# uv / venv
+.venv/
+.python-version
+uv.lock
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Activations & large arrays
+*.npy
+*.memmap
+*.parquet
+*.safetensors
+
+# Paper build artifacts
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.bbl
+paper/*.blg
+paper/*.synctex.gz
+paper/main.pdf

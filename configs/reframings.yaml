@@ -1,0 +1,26 @@
+# Phase 2: pairwise preference reframings.
+# Each reframing must elicit the same latent structural axis without
+# naming "complexity", "Kolmogorov", "compression", or "entropy".
+reframings:
+  - id: structure
+    template: |
+      Consider these two sequences:
+      A: {a}
+      B: {b}
+      Which sequence shows more structure, A or B? Answer with a single letter.
+  - id: predictability
+    template: |
+      Consider these two sequences:
+      A: {a}
+      B: {b}
+      Which would be easier to predict the next element of, A or B?
+      Answer with a single letter.
+  - id: continuation_interest
+    template: |
+      Consider these two sequences:
+      A: {a}
+      B: {b}
+      Which is more interesting to continue, A or B? Answer with a single letter.
+
+position_balanced: true   # average over (A,B) and (B,A)
+record_full_logits: true  # over A/B tokens

@@ -1,0 +1,32 @@
+# Phase 1: stimulus generation defaults
+n_quadruplets: 2000
+sequence_length: 128
+vocab_size: 16
+seed: 0
+
+families:
+  random_iid: { weight: 1 }
+  markov:
+    weight: 3
+    orders: [1, 2, 3]
+  periodic:
+    weight: 4
+    periods: [2, 4, 8, 16, 32]
+  hierarchical_pcfg:
+    weight: 3
+    depths: [2, 3, 4]
+  cellular_automaton:
+    weight: 3
+    rules: [30, 90, 110]
+
+complexity:
+  lz_compressor: gzip
+  bdm_block_size: 12
+  shannon_orders: [1, 2, 3]
+
+quadruplet_controls:
+  - shuffled
+  - markov_pastiche       # order-2 trained on stimulus
+  - random_match          # iid with matched marginals
+
+output: results/stimuli/v1.parquet

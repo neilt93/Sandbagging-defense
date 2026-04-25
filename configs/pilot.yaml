@@ -1,0 +1,18 @@
+# Phase 2: behavioral pilot.
+defaults:
+  - reframings: default
+
+models:
+  - { name: qwen2.5-0.5b, hf_id: Qwen/Qwen2.5-0.5B-Instruct }
+  - { name: qwen2.5-1.5b, hf_id: Qwen/Qwen2.5-1.5B-Instruct }
+  - { name: qwen2.5-7b,   hf_id: Qwen/Qwen2.5-7B-Instruct }
+  - { name: qwen2.5-32b,  hf_id: Qwen/Qwen2.5-32B-Instruct }
+
+stimuli_path: results/stimuli/v1.parquet
+output_dir: results/pilot
+
+# All 6 pairs per quadruplet, both orders -> 12 evals per quadruplet.
+sampling:
+  temperature: 0.0
+  max_tokens: 4
+  logprobs: 8

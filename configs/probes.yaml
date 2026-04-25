@@ -1,0 +1,27 @@
+# Phase 4: activation probing.
+extraction:
+  layer_stride: 5            # every 5th layer
+  position: final_stimulus_token
+  prefix_only: true          # extract before any answer token is generated
+  output_dir: results/activations
+
+training:
+  probe: logistic_regression
+  C: 1.0
+  split_by: quadruplet_id    # no leakage across the four siblings
+  cv_folds: 5
+
+leakage_controls:
+  cantos_uniform_output:
+    enabled: true
+    description: |
+      Re-run probe under condition where the model is forced to emit
+      the same answer token regardless of input. If probe AUROC tracks
+      behavioral accuracy under this condition, the probe is reading
+      output-derived features, not internal structure.
+  levinstein_herrmann_transfer:
+    enabled: true
+    train_families: [hierarchical_pcfg, periodic, markov]
+    test_families: [cellular_automaton, random_iid]
+
+conditions: ${sandbag.conditions}
