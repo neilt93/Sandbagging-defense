@@ -42,8 +42,10 @@ class PairScore:
 
 class Backend(Protocol):
     name: str
+    system_prompt: str | None
 
     def score_pair(self, prompt: str, a_token: str, b_token: str) -> PairScore: ...
+    def score_completions(self, prompt: str, completions: list[str]) -> list[float]: ...
     def close(self) -> None: ...
 
 
@@ -53,23 +55,36 @@ class Backend(Protocol):
 
 
 class MockBackend:
-    """Returns a pair score driven by a user-supplied scoring function.
+    """Returns scores driven by user-supplied scoring functions.
 
-    Default scorer prefers shorter LZ phrases (more structure). That lets
-    the test suite verify the harness recovers the synthetic preference.
+    Default `score_fn` prefers shorter LZ phrases (more structure).
+    Default `mc_score_fn` reads the answer key off the prompt
+    (`Answer: <letter>` token marker) when present, picking the correct
+    completion. When `system_prompt` contains the substring 'sandbag',
+    the mock systematically gives the WRONG answer on multiple-choice
+    questions while leaving the structure preference intact — this lets
+    the test suite verify the money plot's pattern (capability drops,
+    preference holds) without a real model.
     """
 
     def __init__(
         self,
         name: str = "mock",
         score_fn: Callable[[str, str, str], tuple[float, float]] | None = None,
+        mc_score_fn: Callable[[str, list[str], str | None], list[float]] | None = None,
+        system_prompt: str | None = None,
     ) -> None:
         self.name = name
         self.score_fn = score_fn or _default_mock_score_fn
+        self.mc_score_fn = mc_score_fn or _default_mock_mc_score_fn
+        self.system_prompt = system_prompt
 
     def score_pair(self, prompt: str, a_token: str, b_token: str) -> PairScore:
         logp_a, logp_b = self.score_fn(prompt, a_token, b_token)
         return PairScore(logp_a=logp_a, logp_b=logp_b, extra={"backend": "mock"})
+
+    def score_completions(self, prompt: str, completions: list[str]) -> list[float]:
+        return self.mc_score_fn(prompt, completions, self.system_prompt)
 
     def close(self) -> None:
         pass
@@ -105,6 +120,38 @@ def _default_mock_score_fn(prompt: str, a_token: str, b_token: str) -> tuple[flo
     a_score = -a_lz / 8.0
     b_score = -b_lz / 8.0
     return a_score, b_score
+
+
+def _default_mock_mc_score_fn(
+    prompt: str, completions: list[str], system_prompt: str | None
+) -> list[float]:
+    """Multiple-choice scorer for MockBackend.
+
+    Looks for an `Answer: <letter>` marker in the prompt indicating the
+    ground-truth answer. When found:
+      - normal mode (no 'sandbag' in system_prompt): give the correct
+        completion the highest logit
+      - sandbag mode ('sandbag' in system_prompt): give a deterministic
+        WRONG answer (rotate to the next index) — simulates the
+        capability-drop pattern that Phase 3 tests for.
+
+    When no answer marker is present, returns equal logits.
+    """
+    import re
+
+    n = len(completions)
+    base = [0.0] * n
+    match = re.search(r"Answer:\s*([A-Z])", prompt)
+    if not match:
+        return base
+    correct_letter = match.group(1)
+    correct_idx = ord(correct_letter) - ord("A")
+    if not 0 <= correct_idx < n:
+        return base
+    is_sandbag = system_prompt is not None and "sandbag" in system_prompt.lower()
+    target_idx = (correct_idx + 1) % n if is_sandbag else correct_idx
+    base[target_idx] = 5.0  # large logit gap so argmax picks it
+    return base
 
 
 # --------------------------------------------------------------------------- #
@@ -161,6 +208,12 @@ class HFBackend:
         self._model.eval()
 
     def score_pair(self, prompt: str, a_token: str, b_token: str) -> PairScore:
+        logps = self.score_completions(prompt, [a_token, b_token])
+        return PairScore(
+            logp_a=logps[0], logp_b=logps[1], extra={"backend": "hf", "hf_id": self.hf_id}
+        )
+
+    def score_completions(self, prompt: str, completions: list[str]) -> list[float]:
         self._ensure_loaded()
         import torch
 
@@ -170,15 +223,12 @@ class HFBackend:
         ids = self._tokenizer(full, return_tensors="pt").to(self._model.device)
         with torch.no_grad():
             out = self._model(**ids)
-        last_logits = out.logits[0, -1, :].float()
-        a_id = self._tokenizer.encode(a_token, add_special_tokens=False)[-1]
-        b_id = self._tokenizer.encode(b_token, add_special_tokens=False)[-1]
-        logp = last_logits.log_softmax(dim=-1)
-        return PairScore(
-            logp_a=float(logp[a_id]),
-            logp_b=float(logp[b_id]),
-            extra={"backend": "hf", "hf_id": self.hf_id},
-        )
+        logp = out.logits[0, -1, :].float().log_softmax(dim=-1)
+        results: list[float] = []
+        for token in completions:
+            tid = self._tokenizer.encode(token, add_special_tokens=False)[-1]
+            results.append(float(logp[tid]))
+        return results
 
     def _build_chat(self, user: str) -> str:
         msgs: list[dict[str, str]] = []
@@ -235,25 +285,30 @@ class VLLMBackend:
         self._tokenizer = self._llm.get_tokenizer()
 
     def score_pair(self, prompt: str, a_token: str, b_token: str) -> PairScore:
+        logps = self.score_completions(prompt, [a_token, b_token])
+        return PairScore(
+            logp_a=logps[0], logp_b=logps[1], extra={"backend": "vllm", "hf_id": self.hf_id}
+        )
+
+    def score_completions(self, prompt: str, completions: list[str]) -> list[float]:
         self._ensure_loaded()
         from vllm import SamplingParams  # type: ignore[import-untyped]
 
         full = (
             self._build_chat(prompt) if hasattr(self._tokenizer, "apply_chat_template") else prompt
         )
-        params = SamplingParams(temperature=0.0, max_tokens=1, logprobs=20)
+        params = SamplingParams(
+            temperature=0.0, max_tokens=1, logprobs=max(20, 4 * len(completions))
+        )
         out = self._llm.generate([full], params, use_tqdm=False)
         first = out[0].outputs[0]
-        # vLLM returns logprobs at each generated position; we want the
-        # logprobs at position 0 (the first/only generated token).
         lp_dict = first.logprobs[0]
-        a_id = self._tokenizer.encode(a_token, add_special_tokens=False)[-1]
-        b_id = self._tokenizer.encode(b_token, add_special_tokens=False)[-1]
-        logp_a = lp_dict.get(a_id).logprob if a_id in lp_dict else float("-inf")
-        logp_b = lp_dict.get(b_id).logprob if b_id in lp_dict else float("-inf")
-        return PairScore(
-            logp_a=logp_a, logp_b=logp_b, extra={"backend": "vllm", "hf_id": self.hf_id}
-        )
+        results: list[float] = []
+        for token in completions:
+            tid = self._tokenizer.encode(token, add_special_tokens=False)[-1]
+            entry = lp_dict.get(tid)
+            results.append(entry.logprob if entry is not None else float("-inf"))
+        return results
 
     def _build_chat(self, user: str) -> str:
         msgs: list[dict[str, str]] = []
@@ -282,7 +337,7 @@ def get_backend(spec: dict) -> Backend:
     """
     kind = spec["kind"]
     if kind == "mock":
-        return MockBackend(name=spec.get("name", "mock"))
+        return MockBackend(name=spec.get("name", "mock"), system_prompt=spec.get("system_prompt"))
     if kind == "hf":
         return HFBackend(
             name=spec["name"],

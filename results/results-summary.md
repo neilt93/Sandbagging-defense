@@ -125,15 +125,52 @@ Decision gate (one of, when numbers come in):
 
 ---
 
-## Phase 3 — Sandbagging conditions (TBD)
+## Phase 3 — Sandbagging conditions (2026-04-25)
 
-Required numbers (per condition):
-- MMLU relative perf:
-- HumanEval relative perf:
-- Preference accuracy relative perf:
+**Decision gate: PIPELINE READY** (no model run yet — see Phase 2 note).
 
-Decision gate:
-- [ ] preference holds while benchmarks drop ≥ 20% → proceed to Phase 4
+Implemented:
+- `sandbagging/conditions.py` — `load_conditions(path)` parses
+  configs/sandbag.yaml into typed `Condition` records.
+- `sandbagging/mmlu.py` — minimal MMLU evaluator. Loads either
+  `cais/mmlu` from HF datasets or a local JSONL file. Builds
+  `Question\nA. ... D. ...\nAnswer:` prompts and uses
+  `backend.score_completions(prompt, ['A','B','C','D'])` -> argmax.
+- `sandbagging/run.py` — driver that runs each (model, condition)
+  cell across MMLU + the Phase 2 preference harness, writing to
+  `results/sandbag/{model}/{condition}/{mmlu.parquet, preferences/*.parquet}`.
+- `analysis/sandbag.py` — `mmlu_summary`, `preference_summary`,
+  `relative_performance`, `money_plot_frame`. The last produces the
+  long-form table for the central money plot
+  (x=condition, y=relative_perf, hue=metric, facet=model).
+
+Backends gained `score_completions(prompt, completions) -> list[float]`
+across mock, HF, and vLLM. The mock's MMLU scorer reads an `Answer: X`
+marker from the prompt and rotates the answer when the system_prompt
+contains "sandbag" — a synthetic stand-in that lets the test suite
+exercise the money-plot pattern without a real model.
+
+End-to-end pipeline verified with mock (9 tests):
+- 3-condition mock run produces the textbook pattern: MMLU 1.0 -> 0.0
+  under sandbag (>20% drop trivially), preference accuracy near-flat
+  (max-min < 0.05 across conditions).
+- `money_plot_frame` correctly assigns `relative_perf` of 1.0 to
+  baseline and 0.0 to sandbag MMLU; preference relative_perf within
+  10% of normal under sandbag.
+- `relative_performance` baseline division verified exactly.
+
+**Deferred from Phase 3 plan**: HumanEval requires generation +
+sandboxed execution, which is a separate infrastructure lift. The
+decision gate (preference holds while capability drops ≥20%) is
+evaluable from MMLU + preference alone, so this is a scope reduction
+rather than a missing piece.
+
+Required numbers (TBD on a GPU box, after `make install-ml`):
+- MMLU relative perf per condition:
+- Preference accuracy relative perf per condition:
+
+Decision gate (when numbers come in):
+- [ ] preference holds while MMLU drops ≥ 20% → proceed to Phase 4
 - [ ] preference also drops → pivot to negative-result framing
 
 ---
