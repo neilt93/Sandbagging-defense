@@ -53,3 +53,6 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -q"
+markers = [
+    "slow: tests that scan the music21 Bach corpus (may take several seconds)",
+]

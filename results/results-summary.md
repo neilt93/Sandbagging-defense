@@ -175,23 +175,91 @@ Decision gate (when numbers come in):
 
 ---
 
-## Phase 4 — Activation probes (TBD)
+## Phase 4 — Activation probes (2026-04-25)
 
-Required numbers:
+**Decision gate: PIPELINE READY** (no model run yet — see Phase 2 note).
+
+Implemented:
+- `probes/extract.py` — extracts hidden states at the final stimulus
+  token at every k-th layer. Default `prefix_only=True` builds the
+  comma-separated sequence WITHOUT any A/B answer scaffolding, the
+  Cantos-style control. Saves a memmapped `(N, n_layers, hidden_dim)`
+  array + sidecar parquet + meta.json. Accepts an injectable
+  `forward_fn` so tests can substitute a synthetic forward; the real
+  HF path is `hf_forward_fn(model_id)`.
+- `probes/train.py`:
+    - `quadruplet_id_split` — train/test split BY quadruplet so the
+      probe can't memorize per-quadruplet patterns shared by siblings.
+    - `train_probe_at_layer` — `StandardScaler` + `LogisticRegression`
+      with binary or multi-class macro-AUROC.
+    - `sweep_layers` — train one probe per layer, return AUROC table.
+    - `levinstein_herrmann_transfer` — train on subset of families,
+      test on held-out families.
+    - `cantos_compare` — return `'leak'` vs `'internal'` based on the
+      gap between answer-conditioned and prefix-only AUROC and on
+      whether AUROC tracks behavioral accuracy.
+
+End-to-end pipeline verified with synthetic activations (9 tests).
+The synthetic forward encodes the binary structured-vs-control label
+at one specific layer; the rest is noise. The pipeline:
+- recovers the encoding layer as the AUROC argmax (>0.9 there, <0.75
+  elsewhere)
+- demonstrates Levinstein-Herrmann transfer holds when the label is
+  family-independent (AUROC > 0.9)
+- correctly classifies internal vs leaked probes via `cantos_compare`
+- enforces sibling-isolated splits via `quadruplet_id_split`
+
+Synthetic activations use a stable MD5-derived per-prompt seed so
+results are reproducible across pytest invocations (Python's hash() is
+randomized per process).
+
+Required numbers (TBD on a GPU box):
 - Best-layer AUROC, normal:
 - Best-layer AUROC, sandbag_targeted:
 - Best-layer AUROC, sandbag_general:
 - Cantos uniform-output control AUROC:
 - Levinstein-Herrmann transfer AUROC:
 
-Decision gate:
+Decision gate (when numbers come in):
 - [ ] AUROC > 0.8 under sandbag with prefix-only + Cantos controls
 
 ---
 
-## Phase 5 — Music generalization (TBD)
+## Phase 5 — Music generalization (2026-04-25)
 
-Required numbers:
+**Decision gate: PASS on 1-quadruplet smoke check** (full corpus
+generation requires more chorale scanning; see below).
+
+Implemented:
+- `stimuli/music.py` — loads chorales via music21's local Bach corpus,
+  extracts pitch-class sequences (mod 12) from the soprano (top) voice,
+  reuses Phase 1's `build_quadruplet` to produce shuffled,
+  markov_pastiche, random_match controls. Vocab = 12, default length
+  = 128.
+- `make music` target wired to the CLI.
+
+End-to-end smoke (not asserted as a strong gate due to corpus size):
+- 1 chorale meeting the length-128 filter produced a clean quadruplet
+  with the expected LZ ordering: structured 50 < markov_pastiche 52
+  ≤ shuffled 53 ≈ random_match 53.
+- 9 tests pass: pitch-class extraction, shape/range invariants,
+  quadruplet construction, complexity metric finiteness, and
+  load-bearing LZ ordering on a small Bach sample.
+
+**Phase 5 finding**: The music21 Bach corpus has ~412 entries but only
+~14 chorales have ≥128 soprano notes. To get a publication-scale
+corpus (~200 quadruplets), options are:
+1. shorten the music sequences to length 64 (matches ~95 chorales),
+2. concatenate soprano lines across chorales and chunk into length-128
+   segments (gives ~150 quadruplets but blurs the per-chorale boundary),
+3. include alto/tenor/bass voices as additional quadruplets per
+   chorale (4x the supply).
+
+This is a Phase 6 (writeup) decision; for the workshop paper, option 1
+or 3 is reasonable and matches the Phase 1 vocab/length contract once
+chosen. The pipeline supports any length via the `--length` flag.
+
+Required numbers (TBD on a GPU box):
 - Pilot accuracy on music quadruplets:
 - Sandbag-condition accuracy on music:
 - Cross-domain probe transfer AUROC (synthetic → music):
