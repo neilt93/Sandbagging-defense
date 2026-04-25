@@ -1,6 +1,7 @@
 # Phase 2: behavioral pilot.
-defaults:
-  - reframings: default
+# Reframings live in configs/reframings.yaml and are loaded explicitly
+# by the Phase 2 harness (OmegaConf.load), not via Hydra defaults.
+reframings_path: configs/reframings.yaml
 
 models:
   - { name: qwen2.5-0.5b, hf_id: Qwen/Qwen2.5-0.5B-Instruct }

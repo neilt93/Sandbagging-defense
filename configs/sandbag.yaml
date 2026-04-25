@@ -22,5 +22,6 @@ benchmarks:
   preferences:
     use_pilot_quadruplets: true
 
-models: ${...pilot.models}
+# Models reuse the Phase 2 pilot list — Phase 3 driver loads pilot.yaml.
+pilot_config_path: configs/pilot.yaml
 output_dir: results/sandbag

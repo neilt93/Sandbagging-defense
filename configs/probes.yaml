@@ -24,4 +24,5 @@ leakage_controls:
     train_families: [hierarchical_pcfg, periodic, markov]
     test_families: [cellular_automaton, random_iid]
 
-conditions: ${sandbag.conditions}
+# Conditions reuse Phase 3 — driver loads sandbag.yaml at runtime.
+sandbag_config_path: configs/sandbag.yaml
